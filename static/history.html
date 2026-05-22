@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>历史记录 - RoCE 批量打流控制台</title>
+    <link rel="stylesheet" href="/static/styles.css?v=20260522-checkbox-stable" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="topbar">
+        <div>
+          <h1>历史记录</h1>
+        </div>
+        <div class="actions">
+          <a class="nav-button" href="/">返回主页</a>
+          <a class="nav-button" href="/servers.html">服务器管理</a>
+          <a class="nav-button" href="/multicard.html">多卡打流</a>
+          <button id="deleteFilteredHistory" class="danger-outline" type="button">删除选中</button>
+          <button id="refreshHistory" type="button">刷新</button>
+        </div>
+      </section>
+
+      <section class="history-page-layout">
+        <section class="panel history-panel">
+          <div class="panel-head history-head">
+            <div>
+              <h2>任务列表</h2>
+              <p id="historyCount">正在加载...</p>
+            </div>
+            <div class="history-tools">
+              <input id="historySearch" placeholder="搜索任务ID / 服务器名称 / IP / 状态" />
+              <select id="historyStatus">
+                <option value="">全部状态</option>
+                <option value="finished">完成</option>
+                <option value="failed">失败</option>
+                <option value="running">运行中</option>
+                <option value="queued">排队中</option>
+              </select>
+            </div>
+          </div>
+          <div class="history-list" id="historyList">正在加载历史记录...</div>
+        </section>
+      </section>
+      <section id="historyModal" class="history-modal" hidden>
+        <div class="history-modal-backdrop" data-close-modal></div>
+        <div class="history-modal-panel">
+          <div class="history-modal-head">
+            <div>
+              <h2 id="historyModalTitle">历史结果</h2>
+              <p id="historyModalMeta">选择一条历史记录查看结果。</p>
+            </div>
+            <button id="closeHistoryModal" type="button">关闭</button>
+          </div>
+          <div class="history-modal-body">
+            <section class="panel result-panel">
+              <div class="panel-head">
+                <h2>结果</h2>
+              </div>
+              <div id="historyResult" class="result-view empty">选择一条历史记录查看结果。</div>
+            </section>
+            <section class="panel compact-panel">
+              <div class="panel-head">
+                <h2>日志</h2>
+              </div>
+              <pre id="historyLog">暂无任务</pre>
+            </section>
+          </div>
+        </div>
+      </section>
+      <div id="toast" class="toast" hidden></div>
+    </main>
+    <script src="/static/history.js?v=20260522-checkbox-stable"></script>
+  </body>
+</html>

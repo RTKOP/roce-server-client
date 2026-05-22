@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>服务器管理 - RoCE 批量打流控制台</title>
+    <link rel="stylesheet" href="/static/styles.css?v=20260522-checkbox-stable" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="topbar">
+        <div>
+          <h1>服务器管理</h1>
+        </div>
+        <div class="actions">
+          <a class="nav-button" href="/">返回主页</a>
+          <a class="nav-button" href="/multicard.html">多卡打流</a>
+          <button id="addServer">添加服务器</button>
+        </div>
+      </section>
+
+      <section class="layout servers-layout">
+        <aside class="panel settings">
+          <div class="panel-head compact">
+            <h2>批量添加</h2>
+            <button id="bulkAddServers">导入</button>
+          </div>
+          <textarea id="bulkServers" spellcheck="false" placeholder="每行一台：名称,地址,SSH端口,用户,密码&#10;例如：node-a,28.197.226.5,56000,root,password&#10;例如：node-b,28.197.226.6,56000,root,password"></textarea>
+          <div class="excel-import-box">
+            <div>
+              <strong>Excel 导入</strong>
+              <span>支持 .xlsx，按模板列名读取。</span>
+            </div>
+            <div class="excel-actions">
+              <input id="excelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
+              <button id="chooseExcel" type="button">选择 Excel</button>
+              <a class="nav-button" href="/api/hosts/template">下载模板</a>
+            </div>
+            <small id="excelImportStatus">未选择文件</small>
+          </div>
+          <p class="hint">密码会保存到本地 data/hosts.json，适合内网测试工具使用。</p>
+        </aside>
+
+        <section class="panel hosts">
+          <div class="panel-head server-list-head">
+            <div class="server-title-block">
+              <h2>服务器列表</h2>
+              <p id="serverListCount">正在加载...</p>
+            </div>
+            <div class="server-toolbar">
+              <div class="server-search-row">
+                <input id="serverSearch" placeholder="搜索名称 / 地址 / 用户" />
+                <select id="pageSize">
+                  <option value="25">25 / 页</option>
+                  <option value="50">50 / 页</option>
+                  <option value="100">100 / 页</option>
+                </select>
+              </div>
+              <div class="server-action-row">
+                <button id="enableFiltered" type="button">启用</button>
+                <button id="disableFiltered" type="button">禁用</button>
+                <button id="scanSelected" type="button">扫描</button>
+                <button id="deleteFiltered" class="danger-outline" type="button">删除</button>
+              </div>
+              <div class="server-pager-row">
+                <button id="prevPage">上一页</button>
+                <span id="pageInfo">0-0 / 0</span>
+                <button id="nextPage">下一页</button>
+              </div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="asset-table">
+              <thead>
+                <tr>
+                  <th>
+                    <span class="check-head">
+                      <input id="toggleFiltered" type="checkbox" title="全选/取消当前页" />
+                    </span>
+                  </th>
+                  <th>状态</th>
+                  <th>名称</th>
+                  <th>地址</th>
+                  <th>SSH 端口</th>
+                  <th>用户</th>
+                  <th>密码</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="serversBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+      <div id="toast" class="toast" hidden></div>
+    </main>
+    <script src="/static/servers.js?v=20260522-checkbox-stable"></script>
+  </body>
+</html>

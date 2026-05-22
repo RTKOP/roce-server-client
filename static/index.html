@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RoCE 批量打流控制台</title>
+    <link rel="stylesheet" href="/static/styles.css?v=20260522-checkbox-stable" />
+  </head>
+  <body>
+    <a class="skip-link" href="#mainWorkbench">跳到工作台</a>
+    <main class="app">
+      <section class="topbar">
+        <div class="page-title-block">
+          <span class="page-kicker">RDMA / RoCE Traffic Lab</span>
+          <h1>RoCE 批量打流控制台</h1>
+        </div>
+        <div class="actions" aria-label="页面操作">
+          <a class="nav-button" href="/servers.html">服务器管理</a>
+          <a class="nav-button" href="/history.html">历史记录</a>
+          <a class="nav-button" href="/multicard.html">多卡打流</a>
+          <button id="runReal" class="danger" type="button">开始测试！</button>
+        </div>
+      </section>
+
+      <section id="mainWorkbench" class="layout main-workbench">
+        <aside class="panel settings">
+          <div class="panel-head">
+            <h2>测试参数</h2>
+            <span class="panel-badge">perftest</span>
+          </div>
+          <label>测试类型
+            <select id="testType">
+              <option value="write_bw">ib_write_bw</option>
+              <option value="read_bw">ib_read_bw</option>
+              <option value="send_bw">ib_send_bw</option>
+              <option value="write_lat">ib_write_lat</option>
+              <option value="read_lat">ib_read_lat</option>
+              <option value="send_lat">ib_send_lat</option>
+            </select>
+          </label>
+          <div class="grid2">
+            <label>起始端口 <input id="basePort" type="number" placeholder="不填则使用 perftest 默认" /></label>
+            <label>持续秒数 <input id="duration" type="number" placeholder="不填则不加 -D" min="1" /></label>
+            <label>QP 数 <input id="qp" type="number" placeholder="不填则不加 -q" min="1" /></label>
+            <label>TX Depth <input id="txDepth" type="number" placeholder="不填则不加 -t" min="1" /></label>
+            <label>包大小 <input id="size" placeholder="例如 65536" /></label>
+            <label>MTU <input id="mtu" placeholder="例如 4096" /></label>
+            <label>server 预热秒 <input id="serverWarmup" type="number" value="2" step="0.5" /></label>
+          </div>
+          <div class="checks">
+            <label><input id="allSizes" type="checkbox" checked /> 全部包长 -a</label>
+            <label><input id="runInfinitely" type="checkbox" checked /> 持续运行 --run_infinitely</label>
+            <label><input id="showAdvancedRole" type="checkbox" /> 显示 GID/端口</label>
+          </div>
+          <label>client 启动间隔秒 <input id="clientStagger" type="number" value="0.2" step="0.1" /></label>
+        </aside>
+
+        <section class="panel hosts role-panel">
+          <div class="role-panel-top">
+            <div>
+              <h2>角色与打流配置</h2>
+              <p>启用机器后设置 server/client、目标和 RoCE 网卡。</p>
+              <div class="role-stats">
+                <button id="roleTotalStat" class="stat-chip" type="button" data-role-filter="">总计 0</button>
+                <button id="roleEnabledStat" class="stat-chip" type="button" data-role-filter="enabled">启用 0</button>
+                <button id="roleServerStat" class="stat-chip" type="button" data-role-filter="server">Server 0</button>
+                <button id="roleClientStat" class="stat-chip" type="button" data-role-filter="client">Client 0</button>
+              </div>
+            </div>
+            <a class="nav-button" href="/servers.html">添加服务器</a>
+          </div>
+          <div class="role-toolbar">
+            <div class="pager-tools role-pager-tools">
+              <input id="roleSearch" placeholder="搜索名称 / 地址 / 角色" />
+              <select id="rolePageSize">
+                <option value="25">25 / 页</option>
+                <option value="50">50 / 页</option>
+                <option value="100">100 / 页</option>
+              </select>
+              <select id="bulkDeviceSelect" class="bulk-device-select" title="把已启用机器批量切换到同一张网卡">
+                <option value="">批量选择网卡</option>
+              </select>
+              <button id="rolePrevPage">上一页</button>
+              <span id="rolePageInfo">0-0 / 0</span>
+              <button id="roleNextPage">下一页</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="role-table">
+              <thead>
+                <tr>
+                  <th>启用</th>
+                  <th>服务器</th>
+                  <th>角色</th>
+                  <th>目标 Server</th>
+                  <th>RoCE 网卡 / IP</th>
+                  <th class="optional-col">GID</th>
+                  <th class="optional-col">端口</th>
+                </tr>
+              </thead>
+              <tbody id="hostsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="workbench">
+        <section class="panel result-panel">
+          <div class="panel-head">
+            <h2>打流结果</h2>
+          </div>
+          <div id="resultOutput" class="result-view empty">等待任务输出...</div>
+        </section>
+        <aside class="side-stack">
+          <section class="panel compact-panel">
+            <div class="panel-head">
+              <h2>任务日志</h2>
+              <button id="stopJob" disabled>停止当前任务</button>
+            </div>
+            <pre id="jobOutput">暂无任务</pre>
+          </section>
+        </aside>
+      </section>
+
+      <aside id="jobStatusWidget" class="job-status-widget idle">
+        <div class="job-status-top">
+          <span class="job-dot"></span>
+          <strong id="jobStatusTitle">当前无任务</strong>
+          <button id="toggleJobWidget" class="job-widget-toggle" type="button" title="缩小/展开任务窗口">收起</button>
+        </div>
+        <div id="jobStatusMeta" class="job-status-meta">启动测试后这里会显示实时状态</div>
+        <div class="job-status-bar"><span id="jobStatusBar"></span></div>
+        <div id="recentJobsList" class="recent-jobs-list"></div>
+      </aside>
+      <div id="toast" class="toast" aria-live="polite" hidden></div>
+    </main>
+    <script src="/static/app.js?v=20260522-checkbox-stable"></script>
+  </body>
+</html>

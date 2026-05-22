@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>多卡打流 - RoCE 批量打流控制台</title>
+    <link rel="stylesheet" href="/static/styles.css?v=20260522-checkbox-stable" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="topbar">
+        <div>
+          <h1>多卡打流</h1>
+        </div>
+        <div class="actions">
+          <a class="nav-button" href="/">返回主页</a>
+          <a class="nav-button" href="/servers.html">服务器管理</a>
+          <a class="nav-button" href="/history.html">历史记录</a>
+          <button id="runMulti" class="danger">开始多卡测试！</button>
+        </div>
+      </section>
+
+      <section class="layout">
+        <aside class="panel settings">
+          <div class="panel-head"><h2>测试参数</h2></div>
+          <label>测试类型
+            <select id="testType">
+              <option value="write_bw">ib_write_bw</option>
+              <option value="read_bw">ib_read_bw</option>
+              <option value="send_bw">ib_send_bw</option>
+              <option value="write_lat">ib_write_lat</option>
+              <option value="read_lat">ib_read_lat</option>
+              <option value="send_lat">ib_send_lat</option>
+            </select>
+          </label>
+          <div class="grid2">
+            <label>起始端口 <input id="basePort" type="number" placeholder="不填则从 18515 递增" /></label>
+            <label>持续秒数 <input id="duration" type="number" placeholder="不填则不加 -D" min="1" /></label>
+            <label>QP 数 <input id="qp" type="number" placeholder="不填则不加 -q" min="1" /></label>
+            <label>TX Depth <input id="txDepth" type="number" placeholder="不填则不加 -t" min="1" /></label>
+            <label>包大小 <input id="size" placeholder="例如 65536" /></label>
+            <label>MTU <input id="mtu" placeholder="例如 4096" /></label>
+            <label>server 预热秒 <input id="serverWarmup" type="number" value="2" step="0.5" /></label>
+          </div>
+          <div class="checks">
+            <label><input id="allSizes" type="checkbox" checked /> 全部包长 -a</label>
+            <label><input id="runInfinitely" type="checkbox" checked /> 持续运行 --run_infinitely</label>
+          </div>
+          <label>client 启动间隔秒 <input id="clientStagger" type="number" value="0.2" step="0.1" /></label>
+        </aside>
+
+        <section class="panel role-panel multicard-panel">
+          <div class="role-panel-top">
+            <div>
+              <h2>多卡 1 对 1 配置</h2>
+              <div class="role-stats">
+                <span id="pairCount" class="stat-chip active">0 对网卡</span>
+                <span id="serverCardCount" class="stat-chip">Server 0</span>
+                <span id="clientCardCount" class="stat-chip">Client 0</span>
+              </div>
+            </div>
+          </div>
+          <div class="multicard-grid">
+            <section class="multicard-side server-side">
+              <div class="multicard-side-head">
+                <div>
+                  <h2>Server 机器</h2>
+                  <p>选择要作为 server 的机器和网卡。</p>
+                </div>
+                <button id="scanServer" type="button">扫描</button>
+              </div>
+              <select id="serverHost"></select>
+              <div class="multicard-toolbar">
+                <button id="selectAllServers" type="button">全选网卡</button>
+                <button id="clearServers" type="button">清空</button>
+              </div>
+              <div id="serverCards" class="nic-grid empty">请选择 Server 机器。</div>
+            </section>
+
+            <section class="multicard-side client-side">
+              <div class="multicard-side-head">
+                <div>
+                  <h2>Client 机器</h2>
+                  <p>选择要作为 client 的机器和网卡。</p>
+                </div>
+                <button id="scanClient" type="button">扫描</button>
+              </div>
+              <select id="clientHost"></select>
+              <div class="multicard-toolbar">
+                <button id="selectAllClients" type="button">全选网卡</button>
+                <button id="clearClients" type="button">清空</button>
+              </div>
+              <div id="clientCards" class="nic-grid empty">请选择 Client 机器。</div>
+            </section>
+          </div>
+          <div class="pair-preview">
+            <div class="panel-head">
+              <h2>1 对 1 配对</h2>
+              <span id="pairHint">两侧选择相同数量的网卡后即可开始。</span>
+            </div>
+            <div id="pairList" class="pair-list empty">暂无配对。</div>
+          </div>
+        </section>
+      </section>
+
+      <section class="workbench">
+        <section class="panel result-panel">
+          <div class="panel-head"><h2>打流结果</h2></div>
+          <div id="resultOutput" class="result-view empty">等待任务输出...</div>
+        </section>
+        <aside class="side-stack">
+          <section class="panel compact-panel">
+            <div class="panel-head">
+              <h2>任务日志</h2>
+              <button id="stopJob" disabled>停止当前任务</button>
+            </div>
+            <pre id="jobOutput">暂无任务</pre>
+          </section>
+        </aside>
+      </section>
+      <div id="toast" class="toast" hidden></div>
+    </main>
+    <script src="/static/multicard.js?v=20260522-chart-tooltip"></script>
+  </body>
+</html>
