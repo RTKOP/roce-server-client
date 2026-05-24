@@ -7,6 +7,7 @@ import re
 import select
 import shlex
 import signal
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -40,6 +41,7 @@ HOSTS_FILE = DATA_DIR / "hosts.json"
 JOBS_FILE = DATA_DIR / "jobs.json"
 JOBS_DIR = DATA_DIR / "jobs"
 JOBS_INDEX_FILE = JOBS_DIR / "index.json"
+DB_FILE = DATA_DIR / "roce_console.db"
 
 DEFAULT_HOSTS = [
     {
@@ -157,6 +159,7 @@ class Job:
 JOBS: dict[str, Job] = {}
 JOBS_LOCK = threading.Lock()
 PERSIST_LOCK = threading.Lock()
+DB_LOCK = threading.Lock()
 LAST_PERSIST_AT = 0.0
 RUNNING_PERSIST_INTERVAL = 10.0
 
@@ -164,12 +167,101 @@ RUNNING_PERSIST_INTERVAL = 10.0
 def ensure_data() -> None:
     DATA_DIR.mkdir(exist_ok=True)
     JOBS_DIR.mkdir(exist_ok=True)
-    if not HOSTS_FILE.exists():
-        HOSTS_FILE.write_text(json.dumps(DEFAULT_HOSTS, indent=2), encoding="utf-8")
-    if not JOBS_FILE.exists():
-        JOBS_FILE.write_text("[]", encoding="utf-8")
-    if not JOBS_INDEX_FILE.exists():
-        JOBS_INDEX_FILE.write_text("[]", encoding="utf-8")
+    init_db()
+    ensure_hosts_seeded()
+
+
+def json_dumps(data: Any) -> str:
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+def json_loads(value: Optional[str], default: Any) -> Any:
+    if value is None:
+        return default
+    try:
+        return json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return default
+
+
+def db_connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_FILE, timeout=20)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
+
+
+def init_db() -> None:
+    with DB_LOCK:
+        with db_connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS app_kv (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS jobs (
+                    id TEXT PRIMARY KEY,
+                    created_at REAL NOT NULL,
+                    status TEXT NOT NULL,
+                    dry_run INTEGER NOT NULL,
+                    config_json TEXT NOT NULL,
+                    summary_config_json TEXT NOT NULL,
+                    logs_json TEXT NOT NULL,
+                    results_json TEXT NOT NULL,
+                    logs_count INTEGER NOT NULL,
+                    results_count INTEGER NOT NULL,
+                    last_log TEXT NOT NULL,
+                    last_result TEXT NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at DESC)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)")
+            conn.commit()
+
+
+def kv_get(key: str, default: Any) -> Any:
+    with DB_LOCK:
+        with db_connect() as conn:
+            row = conn.execute("SELECT value FROM app_kv WHERE key = ?", (key,)).fetchone()
+    return json_loads(row["value"], default) if row else default
+
+
+def kv_set(key: str, value: Any) -> None:
+    with DB_LOCK:
+        with db_connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO app_kv(key, value, updated_at)
+                VALUES(?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (key, json_dumps(value), time.time()),
+            )
+            conn.commit()
+
+
+def ensure_hosts_seeded() -> None:
+    if kv_get("hosts", None) is not None:
+        return
+    hosts = DEFAULT_HOSTS
+    if HOSTS_FILE.exists():
+        try:
+            legacy_hosts = json.loads(HOSTS_FILE.read_text(encoding="utf-8"))
+            if isinstance(legacy_hosts, list):
+                hosts = legacy_hosts
+        except (OSError, json.JSONDecodeError):
+            hosts = DEFAULT_HOSTS
+    kv_set("hosts", hosts)
 
 
 def sanitize_config(config: dict[str, Any], keep_password: bool = False) -> dict[str, Any]:
@@ -249,23 +341,111 @@ def write_json_file(path: Path, data: Any) -> None:
     temp_path.replace(path)
 
 
+def job_to_db_record(job: Job) -> tuple[Any, ...]:
+    status = "stopped" if job.status in {"queued", "running"} else job.status
+    return (
+        job.id,
+        job.created_at,
+        status,
+        1 if job.dry_run else 0,
+        json_dumps(sanitize_config(job.config)),
+        json_dumps(summarize_config(job.config)),
+        json_dumps(job.logs),
+        json_dumps(job.results),
+        len(job.logs),
+        len(job.results),
+        job.logs[-1] if job.logs else "",
+        job.results[-1] if job.results else "",
+        time.time(),
+    )
+
+
+def upsert_job_records(jobs: list[Job]) -> None:
+    if not jobs:
+        return
+    rows = [job_to_db_record(job) for job in jobs]
+    with DB_LOCK:
+        with db_connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO jobs(
+                    id, created_at, status, dry_run, config_json, summary_config_json,
+                    logs_json, results_json, logs_count, results_count, last_log, last_result, updated_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    created_at = excluded.created_at,
+                    status = excluded.status,
+                    dry_run = excluded.dry_run,
+                    config_json = excluded.config_json,
+                    summary_config_json = excluded.summary_config_json,
+                    logs_json = excluded.logs_json,
+                    results_json = excluded.results_json,
+                    logs_count = excluded.logs_count,
+                    results_count = excluded.results_count,
+                    last_log = excluded.last_log,
+                    last_result = excluded.last_result,
+                    updated_at = excluded.updated_at
+                """,
+                rows,
+            )
+            conn.commit()
+
+
+def db_job_records(limit: int = 100) -> list[dict[str, Any]]:
+    with DB_LOCK:
+        with db_connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, created_at, status, dry_run, config_json, logs_json, results_json
+                FROM jobs
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+    records = []
+    for row in reversed(rows):
+        records.append(
+            {
+                "id": row["id"],
+                "createdAt": row["created_at"],
+                "status": row["status"],
+                "dryRun": bool(row["dry_run"]),
+                "config": json_loads(row["config_json"], {}),
+                "logs": json_loads(row["logs_json"], []),
+                "results": json_loads(row["results_json"], []),
+            }
+        )
+    return records
+
+
+def db_has_jobs() -> bool:
+    with DB_LOCK:
+        with db_connect() as conn:
+            row = conn.execute("SELECT 1 FROM jobs LIMIT 1").fetchone()
+    return row is not None
+
+
+def db_delete_jobs(job_ids: set[str]) -> int:
+    if not job_ids:
+        return 0
+    with DB_LOCK:
+        with db_connect() as conn:
+            before = conn.total_changes
+            conn.executemany("DELETE FROM jobs WHERE id = ?", [(job_id,) for job_id in job_ids])
+            conn.commit()
+            return conn.total_changes - before
+
+
 def persist_jobs() -> None:
     ensure_data()
     with JOBS_LOCK:
         jobs = sorted(JOBS.values(), key=lambda item: item.created_at)[-100:]
-        index_records = [job_to_index_record(job) for job in jobs]
-        detail_records = [(job, job_to_record(job)) for job in jobs if job.dirty or not job_detail_path(job.id).exists()]
-    write_json_file(JOBS_INDEX_FILE, index_records)
-    for job, record in detail_records:
-        write_json_file(job_detail_path(job.id), record)
+        dirty_jobs = [job for job in jobs if job.dirty]
+    upsert_job_records(dirty_jobs)
+    for job in dirty_jobs:
         job.dirty = False
-    keep_files = {job_detail_path(job.id).name for job in jobs}
-    for path in JOBS_DIR.glob("*.json"):
-        if path.name != JOBS_INDEX_FILE.name and path.name not in keep_files:
-            try:
-                path.unlink()
-            except OSError:
-                pass
 
 
 def persist_jobs_throttled(interval: float = RUNNING_PERSIST_INTERVAL) -> None:
@@ -290,25 +470,30 @@ def persist_jobs_force() -> None:
 
 def load_jobs() -> None:
     ensure_data()
-    records = []
-    try:
-        index_records = json.loads(JOBS_INDEX_FILE.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        index_records = []
-    if index_records:
-        for item in index_records[-100:]:
-            job_id = item.get("id")
-            if not job_id:
-                continue
-            try:
-                records.append(json.loads(job_detail_path(str(job_id)).read_text(encoding="utf-8")))
-            except (OSError, json.JSONDecodeError):
-                records.append(item)
+    needs_migration = False
+    if db_has_jobs():
+        records = db_job_records(100)
     else:
+        needs_migration = True
+        records = []
         try:
-            records = json.loads(JOBS_FILE.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            records = []
+            index_records = json.loads(JOBS_INDEX_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            index_records = []
+        if index_records:
+            for item in index_records[-100:]:
+                job_id = item.get("id")
+                if not job_id:
+                    continue
+                try:
+                    records.append(json.loads(job_detail_path(str(job_id)).read_text(encoding="utf-8")))
+                except (OSError, json.JSONDecodeError):
+                    records.append(item)
+        else:
+            try:
+                records = json.loads(JOBS_FILE.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                records = []
     with JOBS_LOCK:
         JOBS.clear()
         for record in records[-100:]:
@@ -326,7 +511,11 @@ def load_jobs() -> None:
                 dirty=False,
             )
             JOBS[job.id] = job
-    persist_jobs()
+    if needs_migration:
+        with JOBS_LOCK:
+            for job in JOBS.values():
+                job.dirty = True
+        persist_jobs()
 
 
 def delete_jobs(job_ids: list[str]) -> int:
@@ -343,8 +532,9 @@ def delete_jobs(job_ids: list[str]) -> int:
                 except OSError:
                     pass
                 deleted += 1
+    deleted += db_delete_jobs(deleting)
     persist_jobs()
-    return deleted
+    return min(deleted, len(deleting))
 
 
 def active_job() -> Optional[Job]:
@@ -389,12 +579,15 @@ def send_json(handler: SimpleHTTPRequestHandler, payload: Any, status: int = 200
 
 def load_hosts() -> list[dict[str, Any]]:
     ensure_data()
-    return json.loads(HOSTS_FILE.read_text(encoding="utf-8"))
+    hosts = kv_get("hosts", DEFAULT_HOSTS)
+    return hosts if isinstance(hosts, list) else DEFAULT_HOSTS
 
 
 def save_hosts(hosts: list[dict[str, Any]]) -> None:
     ensure_data()
-    HOSTS_FILE.write_text(json.dumps(hosts, indent=2, ensure_ascii=False), encoding="utf-8")
+    kv_set("hosts", hosts)
+    # Keep a human-readable local backup for existing users, but SQLite is authoritative.
+    write_json_file(HOSTS_FILE, hosts)
 
 
 def save_topology(hosts: list[dict[str, Any]]) -> list[dict[str, Any]]:

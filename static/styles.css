@@ -1255,6 +1255,7 @@ td input[type="checkbox"] {
   grid-template-columns: 48px minmax(0, 1fr) minmax(82px, 0.9fr) minmax(66px, auto);
   min-height: 24px;
   padding: 3px 4px;
+  position: relative;
   text-decoration: none;
 }
 
@@ -1302,12 +1303,22 @@ td input[type="checkbox"] {
 }
 
 .recent-job-action {
-  grid-column: 4;
-  grid-row: 1;
-  justify-self: end;
+  align-items: center;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  line-height: 1;
+  min-height: 30px;
+  min-width: 54px;
   opacity: 0;
+  padding: 0 12px;
   pointer-events: none;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   transition: opacity 0.12s ease;
+  z-index: 2;
 }
 
 .recent-job-item:hover .recent-job-action,
@@ -1324,9 +1335,6 @@ td input[type="checkbox"] {
   color: var(--danger);
   font-size: 11px;
   font-weight: 800;
-  min-height: 22px;
-  padding: 0 8px;
-  width: 42px;
 }
 
 .recent-job-rerun {
@@ -1339,14 +1347,14 @@ td input[type="checkbox"] {
   background: #fff0ee;
   border-color: var(--danger);
   box-shadow: none;
-  transform: none;
+  transform: translateY(-50%);
 }
 
 .recent-job-rerun:hover {
   background: #eef5ff;
   border-color: var(--accent-2);
   box-shadow: none;
-  transform: none;
+  transform: translateY(-50%);
 }
 
 .recent-job-item.finished span,

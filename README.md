@@ -79,7 +79,7 @@ iproute2
 ssh user@server hostname
 ```
 
-如果不使用密钥登录，也可以在服务器管理页填写密码。密码会保存到本地 `data/hosts.json`，适合内网测试工具使用；请不要把 `data/` 目录提交到 GitHub。
+如果不使用密钥登录，也可以在服务器管理页填写密码。密码会保存到本地 `data/roce_console.db`，适合内网测试工具使用；请不要把 `data/` 目录提交到 GitHub。
 
 ## 安全说明
 
@@ -96,15 +96,17 @@ ib_write_bw server_ip -d mlx5_0 -x 3 -F --report_gbits -D 30 -p 18515
 
 ## 持久化
 
-服务器清单保存在：
+服务器清单、扫描结果、任务索引、任务日志和打流结果保存在 SQLite 单文件：
+
+```text
+data/roce_console.db
+```
+
+老版本 JSON 数据会在程序启动时自动导入 SQLite，原文件会作为本地备份保留：
 
 ```text
 data/hosts.json
-```
-
-任务索引、任务历史和打流结果保存在：
-
-```text
+data/jobs.json
 data/jobs/index.json
 data/jobs/*.json
 ```
@@ -129,4 +131,4 @@ node03,10.0.0.3,22,root,password
 
 角色、网卡、RoCE IP、目标 Server 等打流配置在主页编辑。
 
-也可以在服务器管理页点击“下载模板”，按模板填写 `.xlsx` 后通过“选择 Excel”导入。页面上的修改会自动保存到本地 `data/hosts.json`。
+也可以在服务器管理页点击“下载模板”，按模板填写 `.xlsx` 后通过“选择 Excel”导入。页面上的修改会自动保存到本地 `data/roce_console.db`。
